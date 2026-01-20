@@ -298,7 +298,7 @@ const defaults: StateType = {
 
 const scenarios = [
   { key: "conservative", label: "Konservativt", effectPct: 5, tag: "Lågt antagande" },
-  { key: "low", label: "Lågt (din 10%)", effectPct: 10, tag: "Defensivt" },
+  { key: "low", label: "Lågt (10%)", effectPct: 10, tag: "Defensivt" },
   { key: "ambitious", label: "Ambitiöst", effectPct: 20, tag: "Tryck" },
 ];
 
@@ -549,15 +549,13 @@ export default function HandfatROIKalkylator() {
                     />
                   </TabsContent>
 
-                  <TabsContent value="infektion" className="mt-6 space-y-6">
-                    <SliderField
+                  <TabsContent value="infektion" className="mt-6 space-y-5">
+                    <Field
+                      id="vriRate"
                       label="VRI per 1 000 vårddygn"
-                      value={parsed.vriPer1000BedDays}
+                      value={state.vriPer1000BedDays}
                       onChange={(v) => setState((p) => ({ ...p, vriPer1000BedDays: v }))}
-                      min={0}
-                      max={30}
-                      step={0.5}
-                      helper="Infektionsrate. Använd er egen data om ni har, annars ett konservativt värde."
+                      helper="Infektionsrate. Använd er egen data om ni har."
                     />
                     <Field
                       id="vriOverride"
@@ -568,34 +566,25 @@ export default function HandfatROIKalkylator() {
                       right={result.usedOverride ? <Badge className="rounded-xl bg-green-100 text-green-800">aktiv</Badge> : null}
                     />
                     <Separator className="my-2" />
-                    <SliderField
-                      label="Andel gramnegativa VRI"
-                      value={parsed.gramNegPct}
+                    <Field
+                      id="gramNeg"
+                      label="Andel gramnegativa VRI (%)"
+                      value={state.gramNegPct}
                       onChange={(v) => setState((p) => ({ ...p, gramNegPct: v }))}
-                      min={10}
-                      max={60}
-                      step={1}
-                      unit="%"
                       helper="Hur stor andel av VRI som är gramnegativa bakterier."
                     />
-                    <SliderField
-                      label="Handfatskoppling"
-                      value={parsed.sinkAttributablePct}
+                    <Field
+                      id="sinkAttr"
+                      label="Handfatskoppling (%)"
+                      value={state.sinkAttributablePct}
                       onChange={(v) => setState((p) => ({ ...p, sinkAttributablePct: v }))}
-                      min={1}
-                      max={30}
-                      step={1}
-                      unit="%"
                       helper="Andel av gramnegativa VRI som kan kopplas till handfat/avlopp."
                     />
-                    <SliderField
-                      label="Effekt (förväntad minskning)"
-                      value={parsed.effectPct}
+                    <Field
+                      id="effect"
+                      label="Effekt - förväntad minskning (%)"
+                      value={state.effectPct}
                       onChange={(v) => setState((p) => ({ ...p, effectPct: v }))}
-                      min={1}
-                      max={50}
-                      step={1}
-                      unit="%"
                       helper="Förväntad minskning av handfatskopplade gramnegativa VRI."
                     />
                   </TabsContent>
@@ -657,25 +646,19 @@ export default function HandfatROIKalkylator() {
                     )}
                   </TabsContent>
 
-                  <TabsContent value="produkt" className="mt-6 space-y-6">
-                    <SliderField
-                      label="Investering (CAPEX)"
-                      value={parsed.capex}
+                  <TabsContent value="produkt" className="mt-6 space-y-5">
+                    <Field
+                      id="capex"
+                      label="Investering (CAPEX, SEK)"
+                      value={state.capex}
                       onChange={(v) => setState((p) => ({ ...p, capex: v }))}
-                      min={50000}
-                      max={1000000}
-                      step={10000}
-                      formatValue={(v) => `${(v / 1000).toFixed(0)}k kr`}
                       helper="Total investering för handfat inkl. installation."
                     />
-                    <SliderField
-                      label="Årlig driftkostnad (OPEX)"
-                      value={parsed.opexYear}
+                    <Field
+                      id="opex"
+                      label="Årlig driftkostnad (OPEX, SEK/år)"
+                      value={state.opexYear}
                       onChange={(v) => setState((p) => ({ ...p, opexYear: v }))}
-                      min={0}
-                      max={100000}
-                      step={5000}
-                      formatValue={(v) => `${(v / 1000).toFixed(0)}k kr/år`}
                       helper="Filter, inspektion, spolning, reservdelar, etc."
                     />
                     <SliderField
