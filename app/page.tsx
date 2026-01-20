@@ -140,24 +140,141 @@ interface StateType {
   capexAmortYears: number | string;
 }
 
-function exportJSON(state: StateType, result: ReturnType<typeof calc>) {
-  const payload = {
-    meta: {
-      exportedAt: new Date().toISOString(),
-      currency: "SEK",
-      locale: "sv-SE",
-    },
-    inputs: state,
-    outputs: result,
-  };
-
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "handfat-roi-kalkyl.json";
-  a.click();
-  URL.revokeObjectURL(url);
+function exportPDF(state: StateType, parsed: CalcInput, result: ReturnType<typeof calc>) {
+  import('jspdf').then(({ jsPDF }) => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    const date = new Date().toLocaleDateString("sv-SE");
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Colors
+    const darkGray = '#1a1a1a';
+    const mediumGray = '#666666';
+    const lightGray = '#e5e5e5';
+    const green = '#16a34a';
+    const lightGreen = '#f0fdf4';
+    
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(darkGray);
+    doc.text('ROI-kalkyl: Handfat', 20, 25);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(mediumGray);
+    doc.text(`Genererad: ${date}`, 20, 33);
+    
+    // Indata Section
+    doc.setFontSize(13);
+    doc.setTextColor(darkGray);
+    doc.text('Indata', 20, 50);
+    
+    doc.setDrawColor(lightGray);
+    doc.line(20, 54, pageWidth - 20, 54);
+    
+    doc.setFontSize(9);
+    
+    // Left column
+    const labelX = 20;
+    const valueX = 70;
+    const rightLabelX = 110;
+    const rightValueX = 160;
+    let y = 64;
+    
+    const addRow = (label: string, value: string, rightLabel?: string, rightValue?: string) => {
+      doc.setTextColor(mediumGray);
+      doc.text(label, labelX, y);
+      doc.setTextColor(darkGray);
+      doc.setFont('helvetica', 'bold');
+      doc.text(value, valueX, y);
+      doc.setFont('helvetica', 'normal');
+      
+      if (rightLabel && rightValue) {
+        doc.setTextColor(mediumGray);
+        doc.text(rightLabel, rightLabelX, y);
+        doc.setTextColor(darkGray);
+        doc.setFont('helvetica', 'bold');
+        doc.text(rightValue, rightValueX, y);
+        doc.setFont('helvetica', 'normal');
+      }
+      y += 8;
+    };
+    
+    addRow('Antal vårdplatser:', fmtInt(parsed.beds), 'Extra vårddagar/VRI:', fmt1(parsed.extraDaysPerVRI));
+    addRow('Beläggning:', fmtPct(parsed.occupancyPct), 'Kostnad/vårddygn:', fmtMoneySEK(parsed.costPerBedDay));
+    addRow('VRI per 1000 vårddygn:', fmt1(parsed.vriPer1000BedDays), 'Investering (CAPEX):', fmtMoneySEK(parsed.capex));
+    addRow('Andel gramnegativa:', fmtPct(parsed.gramNegPct), 'Årlig kostnad (OPEX):', fmtMoneySEK(parsed.opexYear));
+    addRow('Handfatskoppling:', fmtPct(parsed.sinkAttributablePct), 'Avskrivningstid:', fmtInt(parsed.capexAmortYears) + ' år');
+    addRow('Effekt (minskning):', fmtPct(parsed.effectPct));
+    
+    // Resultat Section
+    y += 10;
+    doc.setFontSize(13);
+    doc.setTextColor(darkGray);
+    doc.text('Resultat', 20, y);
+    y += 4;
+    doc.line(20, y, pageWidth - 20, y);
+    y += 10;
+    
+    doc.setFontSize(9);
+    
+    addRow('Vårddygn per år:', fmtInt(result.bedDays), 'Undvikna infektioner/år:', fmt1(result.avoided));
+    addRow('VRI per år:', fmt1(result.vri), 'Sparade vårddygn/år:', fmt1(result.savedBedDays));
+    addRow('Gramnegativa VRI/år:', fmt1(result.gramNeg), 'Sparade kronor/år:', fmtMoneySEK(result.savedSEK));
+    addRow('Handfatskopplade VRI:', fmt1(result.sinkGramNeg), 'Årskostnad:', fmtMoneySEK(result.annualCost));
+    
+    // Summary Box
+    y += 10;
+    doc.setFillColor(lightGreen);
+    doc.setDrawColor('#86efac');
+    doc.roundedRect(20, y, pageWidth - 40, 40, 3, 3, 'FD');
+    
+    y += 10;
+    doc.setFontSize(11);
+    doc.setTextColor(darkGray);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Sammanfattning', 25, y);
+    
+    y += 10;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(mediumGray);
+    doc.text('Netto per år:', 25, y);
+    doc.setTextColor(green);
+    doc.setFont('helvetica', 'bold');
+    doc.text(fmtMoneySEK(result.net), 55, y);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(mediumGray);
+    doc.text('Payback:', 100, y);
+    doc.setTextColor(green);
+    doc.setFont('helvetica', 'bold');
+    doc.text(Number.isFinite(result.paybackYears) ? fmt1(result.paybackYears) + ' år' : '–', 120, y);
+    
+    y += 12;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor('#333333');
+    doc.setFontSize(8);
+    const summaryText = `Med antagandet ${fmtPct(parsed.sinkAttributablePct)} handfatskoppling och ${fmtPct(parsed.effectPct)} effekt undviks cirka ${fmt1(result.avoided)} gramnegativa vårdrelaterade infektioner per år, motsvarande ${fmt1(result.savedBedDays)} sparade vårddygn.`;
+    const splitText = doc.splitTextToSize(summaryText, pageWidth - 50);
+    doc.text(splitText, 25, y);
+    
+    // Footer
+    const footerY = doc.internal.pageSize.getHeight() - 20;
+    doc.setDrawColor(lightGray);
+    doc.line(20, footerY - 5, pageWidth - 20, footerY - 5);
+    
+    doc.setFontSize(8);
+    doc.setTextColor(mediumGray);
+    doc.text('Handfat ROI-kalkylator', 20, footerY);
+    doc.text('Denna kalkyl är avsedd som beslutsunderlag. För kliniska beslut krävs lokala data och uppföljning.', 20, footerY + 5);
+    
+    // Save
+    doc.save(`handfat-roi-kalkyl-${date}.pdf`);
+  });
 }
 
 const defaults: StateType = {
@@ -278,7 +395,7 @@ export default function HandfatROIKalkylator() {
             <div>
               <h1 className="text-2xl md:text-3xl font-semibold">Handfat ROI-kalkylator (VRI · gramnegativa · vårddagar)</h1>
               <p className="text-sm text-muted-foreground mt-2 max-w-3xl leading-relaxed">
-                En defensiv sälj- och vårdhygienkalkyl: volymer → VRI → gramnegativa → handfatskopplade → undvikna infektioner → sparade vårddagar och kronor.
+                Beräkna potentialen: volymer → VRI → gramnegativa → handfatskopplade → undvikna infektioner → sparade vårddagar och kronor.
               </p>
             </div>
             <div className="flex gap-2">
@@ -291,11 +408,11 @@ export default function HandfatROIKalkylator() {
                 Återställ
               </Button>
               <Button
-                onClick={() => exportJSON(state, result)}
+                onClick={() => exportPDF(state, parsed, result)}
                 className="rounded-2xl"
               >
                 <Download className="h-4 w-4 mr-2" />
-                Exportera
+                Ladda ner rapport
               </Button>
             </div>
           </div>
@@ -506,7 +623,7 @@ export default function HandfatROIKalkylator() {
               <CardHeader>
                 <CardTitle>Resultat</CardTitle>
                 <CardDescription>
-                  Outputen är avsiktligt enkel att visa för Vårdhygien: infektioner, vårddagar, kronor.
+                  Översikt: infektioner, vårddagar, kronor.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -571,44 +688,23 @@ export default function HandfatROIKalkylator() {
                   />
                 </div>
 
-                <div className="rounded-2xl border p-4">
+                <div className="rounded-2xl border p-4 bg-green-50">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-medium">Pitch-rad (copy/paste)</div>
+                      <div className="text-sm font-medium">Sammanfattning</div>
                       <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                        Med ett defensivt antagande ({fmtPct(parsed.sinkAttributablePct)} handfatskoppling och {fmtPct(parsed.effectPct)} effekt) undviker vi cirka <span className="font-medium">{fmt1(result.avoided)}</span> gramnegativa vårdrelaterade infektioner per år, vilket motsvarar <span className="font-medium">{fmt1(result.savedBedDays)}</span> sparade vårddygn och ungefär <span className="font-medium">{fmtMoneySEK(result.savedSEK)}</span> i årlig besparing.
+                        Med antagandet {fmtPct(parsed.sinkAttributablePct)} handfatskoppling och {fmtPct(parsed.effectPct)} effekt undviks cirka <span className="font-medium">{fmt1(result.avoided)}</span> gramnegativa vårdrelaterade infektioner per år, vilket motsvarar <span className="font-medium">{fmt1(result.savedBedDays)}</span> sparade vårddygn och ungefär <span className="font-medium">{fmtMoneySEK(result.savedSEK)}</span> i årlig besparing.
                       </p>
                     </div>
-                    <Badge className="rounded-xl">defensivt</Badge>
                   </div>
                 </div>
 
                 <div className="text-xs text-muted-foreground leading-relaxed">
-                  <span className="font-medium">Obs:</span> Detta är en sälj- och hygienkalkylator. För kliniska beslut behövs lokala data, definitionsavgränsning (VRI-typ), och uppföljning.
+                  <span className="font-medium">Obs:</span> För kliniska beslut behövs lokala data, definitionsavgränsning (VRI-typ), och uppföljning.
                 </div>
               </CardContent>
             </Card>
           </div>
-
-          <Card className="rounded-3xl shadow-sm">
-            <CardHeader>
-              <CardTitle>Hur ni använder den i sälj (praktiskt)</CardTitle>
-              <CardDescription>Tre steg när ni pitchar till Vårdhygien eller verksamhetschef.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ol className="list-decimal pl-5 space-y-2 text-sm text-muted-foreground">
-                <li>
-                  Sätt volymen (platser + beläggning). Använd deras VRI-rate om de har den, annars lågt schablonvärde.
-                </li>
-                <li>
-                  Sätt gramnegativ andel och handfatskoppling lågt (defensivt). Välj scenario <span className="font-medium">Konservativt</span> först.
-                </li>
-                <li>
-                  Visa outputen: <span className="font-medium">undvikna infektioner</span>, <span className="font-medium">sparade vårddygn</span>, <span className="font-medium">kronor</span>, och <span className="font-medium">payback</span>.
-                </li>
-              </ol>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </TooltipProvider>
