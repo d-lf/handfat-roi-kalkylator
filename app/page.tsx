@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Slider } from "@/components/ui/slider";
 import { Download, RotateCcw } from "lucide-react";
 
 function clamp(n: number, min: number, max: number) {
@@ -318,17 +319,61 @@ function Field({ id, label, value, onChange, helper, right, type = "text" }: {
         </Label>
         {right}
       </div>
-      <Input id={id} value={value} onChange={(e) => onChange(e.target.value)} type={type} />
+      <Input id={id} value={value} onChange={(e) => onChange(e.target.value)} type={type} className="rounded-xl" />
       {helper ? <p className="text-xs text-muted-foreground leading-relaxed">{helper}</p> : null}
     </div>
   );
 }
 
-function Metric({ title, value, sub }: { title: string; value: string; sub?: string }) {
+function SliderField({ 
+  label, 
+  value, 
+  onChange, 
+  min, 
+  max, 
+  step = 1, 
+  unit = "",
+  helper,
+  formatValue
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+  helper?: string;
+  formatValue?: (v: number) => string;
+}) {
+  const displayValue = formatValue ? formatValue(value) : `${value}${unit}`;
+  
   return (
-    <div className="rounded-2xl border p-4 bg-background">
-      <div className="text-xs text-muted-foreground">{title}</div>
-      <div className="text-2xl font-semibold mt-1">{value}</div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <Label className="text-sm">{label}</Label>
+        <span className="text-sm font-medium tabular-nums bg-muted px-3 py-1 rounded-lg min-w-[80px] text-center">
+          {displayValue}
+        </span>
+      </div>
+      <Slider
+        value={[value]}
+        onValueChange={([v]) => onChange(v)}
+        min={min}
+        max={max}
+        step={step}
+        className="w-full"
+      />
+      {helper ? <p className="text-xs text-muted-foreground leading-relaxed">{helper}</p> : null}
+    </div>
+  );
+}
+
+function Metric({ title, value, sub, highlight }: { title: string; value: string; sub?: string; highlight?: boolean }) {
+  return (
+    <div className={`rounded-2xl border p-4 transition-colors ${highlight ? 'bg-green-50 border-green-200' : 'bg-background hover:bg-muted/30'}`}>
+      <div className="text-xs text-muted-foreground uppercase tracking-wide">{title}</div>
+      <div className={`text-2xl font-semibold mt-1 ${highlight ? 'text-green-700' : ''}`}>{value}</div>
       {sub ? <div className="text-xs text-muted-foreground mt-1">{sub}</div> : null}
     </div>
   );
@@ -421,25 +466,37 @@ export default function HandfatROIKalkylator() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">Scenario</CardTitle>
               <CardDescription>
-                Välj ett standardscenario för effekt. Du kan alltid justera manuellt efteråt.
+                Välj antagande för förväntad effekt. Du kan alltid justera manuellt i indata.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {scenarios.map((s) => (
-                  <Button
-                    key={s.key}
-                    variant={Math.round(parsed.effectPct) === s.effectPct ? "default" : "secondary"}
-                    className="rounded-2xl"
-                    onClick={() => setState((prev) => ({ ...prev, effectPct: s.effectPct }))}
-                  >
-                    {s.label}
-                    <Badge variant="secondary" className="ml-2 rounded-xl">{s.effectPct}%</Badge>
-                  </Button>
-                ))}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {scenarios.map((s) => {
+                  const isSelected = Math.round(parsed.effectPct) === s.effectPct;
+                  return (
+                    <button
+                      key={s.key}
+                      className={`relative rounded-2xl border-2 p-4 text-left transition-all ${
+                        isSelected 
+                          ? 'border-primary bg-primary/5 shadow-sm' 
+                          : 'border-muted hover:border-muted-foreground/30 hover:bg-muted/30'
+                      }`}
+                      onClick={() => setState((prev) => ({ ...prev, effectPct: s.effectPct }))}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`font-medium ${isSelected ? 'text-primary' : ''}`}>{s.label}</span>
+                        <span className={`text-lg font-bold ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>{s.effectPct}%</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{s.tag}</span>
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                Effekt = minskning av <span className="font-medium">handfatskopplade gramnegativa VRI</span>.
+              <p className="text-xs text-muted-foreground mt-4">
+                Effekt = förväntad minskning av handfatskopplade gramnegativa VRI.
               </p>
             </CardContent>
           </Card>
@@ -459,149 +516,177 @@ export default function HandfatROIKalkylator() {
                     <TabsTrigger value="produkt" className="rounded-2xl">Produkt</TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="volym" className="mt-6 space-y-4">
-                    <Field
-                      id="beds"
+                  <TabsContent value="volym" className="mt-6 space-y-6">
+                    <SliderField
                       label="Antal vårdplatser"
-                      value={state.beds}
+                      value={parsed.beds}
                       onChange={(v) => setState((p) => ({ ...p, beds: v }))}
+                      min={1}
+                      max={200}
+                      step={1}
+                      unit=" st"
                       helper="Antal bemannade platser i den enhet du räknar på."
                     />
-                    <Field
-                      id="occupancy"
-                      label="Beläggning (%)"
-                      value={state.occupancyPct}
+                    <SliderField
+                      label="Beläggning"
+                      value={parsed.occupancyPct}
                       onChange={(v) => setState((p) => ({ ...p, occupancyPct: v }))}
-                      helper="Exempel: 92 för 92%."
+                      min={50}
+                      max={100}
+                      step={1}
+                      unit="%"
+                      helper="Genomsnittlig beläggningsgrad på avdelningen."
                     />
-                    <Field
-                      id="alos"
-                      label="Medelvårdtid (dygn)"
-                      value={state.alosDays}
+                    <SliderField
+                      label="Medelvårdtid"
+                      value={parsed.alosDays}
                       onChange={(v) => setState((p) => ({ ...p, alosDays: v }))}
-                      helper="Används mest för rimlighetskoll (inte nödvändigt i grundformeln)."
-                      right={
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge variant="secondary" className="rounded-xl cursor-help">info</Badge>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            Vi använder vårddygn (platser × 365 × beläggning) för volym. Medelvårdtid är för att kunna diskutera patientflöde i pitch.
-                          </TooltipContent>
-                        </Tooltip>
-                      }
+                      min={1}
+                      max={30}
+                      step={0.5}
+                      unit=" dygn"
+                      helper="Används för rimlighetskoll och diskussion om patientflöde."
                     />
                   </TabsContent>
 
-                  <TabsContent value="infektion" className="mt-6 space-y-4">
-                    <Field
-                      id="vriRate"
+                  <TabsContent value="infektion" className="mt-6 space-y-6">
+                    <SliderField
                       label="VRI per 1 000 vårddygn"
-                      value={state.vriPer1000BedDays}
+                      value={parsed.vriPer1000BedDays}
                       onChange={(v) => setState((p) => ({ ...p, vriPer1000BedDays: v }))}
-                      helper="Om ni har egen VRI-rate per enhet. Annars kör defensiv schablon."
+                      min={0}
+                      max={30}
+                      step={0.5}
+                      helper="Infektionsrate. Använd er egen data om ni har, annars ett konservativt värde."
                     />
                     <Field
                       id="vriOverride"
-                      label="Alternativt: VRI per år (override)"
+                      label="Alternativt: VRI per år (exakt antal)"
                       value={state.vriPerYearOverride}
                       onChange={(v) => setState((p) => ({ ...p, vriPerYearOverride: v }))}
-                      helper="Om du fyller i detta används det istället för VRI/1000 vårddygn. Lämna tomt för att använda rate."
-                      right={result.usedOverride ? <Badge className="rounded-xl">använder override</Badge> : <Badge variant="secondary" className="rounded-xl">använder rate</Badge>}
+                      helper="Fyll i om du vet exakt antal VRI per år. Lämna tomt för att beräkna från rate."
+                      right={result.usedOverride ? <Badge className="rounded-xl bg-green-100 text-green-800">aktiv</Badge> : null}
                     />
-                    <Separator />
-                    <Field
-                      id="gramNeg"
-                      label="Andel gramnegativa VRI (%)"
-                      value={state.gramNegPct}
+                    <Separator className="my-2" />
+                    <SliderField
+                      label="Andel gramnegativa VRI"
+                      value={parsed.gramNegPct}
                       onChange={(v) => setState((p) => ({ ...p, gramNegPct: v }))}
-                      helper="Exempel: 35 = 35% av VRI är gramnegativa."
+                      min={10}
+                      max={60}
+                      step={1}
+                      unit="%"
+                      helper="Hur stor andel av VRI som är gramnegativa bakterier."
                     />
-                    <Field
-                      id="sinkAttr"
-                      label="Andel gramnegativa VRI kopplade till handfat/miljö (%)"
-                      value={state.sinkAttributablePct}
+                    <SliderField
+                      label="Handfatskoppling"
+                      value={parsed.sinkAttributablePct}
                       onChange={(v) => setState((p) => ({ ...p, sinkAttributablePct: v }))}
-                      helper="Defensivt antagande. Du kan lägga detta lågt för att inte överdriva."
+                      min={1}
+                      max={30}
+                      step={1}
+                      unit="%"
+                      helper="Andel av gramnegativa VRI som kan kopplas till handfat/avlopp."
                     />
-                    <Field
-                      id="effect"
-                      label="Effekt: minskning av handfatskopplade gramnegativa VRI (%)"
-                      value={state.effectPct}
+                    <SliderField
+                      label="Effekt (förväntad minskning)"
+                      value={parsed.effectPct}
                       onChange={(v) => setState((p) => ({ ...p, effectPct: v }))}
-                      helper="Scenario-knapparna ovan fyller detta åt dig, men du kan skriva själv."
+                      min={1}
+                      max={50}
+                      step={1}
+                      unit="%"
+                      helper="Förväntad minskning av handfatskopplade gramnegativa VRI."
                     />
                   </TabsContent>
 
-                  <TabsContent value="kostnad" className="mt-6 space-y-4">
-                    <div className="flex items-center justify-between gap-3">
+                  <TabsContent value="kostnad" className="mt-6 space-y-6">
+                    <div className="space-y-3">
                       <Label className="text-sm">Prissättningsmodell</Label>
                       <div className="flex gap-2">
                         <Button
                           size="sm"
-                          variant={state.pricingMode === "bedDays" ? "default" : "secondary"}
-                          className="rounded-2xl"
+                          variant={state.pricingMode === "bedDays" ? "default" : "outline"}
+                          className="rounded-xl flex-1"
                           onClick={() => setState((p) => ({ ...p, pricingMode: "bedDays" }))}
                         >
-                          Vårddygn
+                          Per vårddygn
                         </Button>
                         <Button
                           size="sm"
-                          variant={state.pricingMode === "perVRI" ? "default" : "secondary"}
-                          className="rounded-2xl"
+                          variant={state.pricingMode === "perVRI" ? "default" : "outline"}
+                          className="rounded-xl flex-1"
                           onClick={() => setState((p) => ({ ...p, pricingMode: "perVRI" }))}
                         >
-                          Kostnad/VRI
+                          Per VRI
                         </Button>
                       </div>
                     </div>
-                    <Field
-                      id="extraDays"
+                    <SliderField
                       label="Extra vårddagar per VRI"
-                      value={state.extraDaysPerVRI}
+                      value={parsed.extraDaysPerVRI}
                       onChange={(v) => setState((p) => ({ ...p, extraDaysPerVRI: v }))}
-                      helper="Hur många extra dygn en VRI typiskt ger. Använd gärna era egna siffror."
+                      min={1}
+                      max={20}
+                      step={1}
+                      unit=" dygn"
+                      helper="Hur många extra dygn en VRI typiskt medför."
                     />
                     {state.pricingMode === "bedDays" ? (
-                      <Field
-                        id="costPerDay"
-                        label="Kostnad per vårddygn (SEK)"
-                        value={state.costPerBedDay}
+                      <SliderField
+                        label="Kostnad per vårddygn"
+                        value={parsed.costPerBedDay}
                         onChange={(v) => setState((p) => ({ ...p, costPerBedDay: v }))}
-                        helper="Schablon för kostnad per vårddygn."
+                        min={5000}
+                        max={25000}
+                        step={500}
+                        formatValue={(v) => `${(v / 1000).toFixed(0)}k kr`}
+                        helper="Genomsnittlig kostnad per vårddygn."
                       />
                     ) : (
-                      <Field
-                        id="costPerVri"
-                        label="Kostnad per VRI (SEK)"
-                        value={state.costPerVRI}
+                      <SliderField
+                        label="Kostnad per VRI"
+                        value={parsed.costPerVRI}
                         onChange={(v) => setState((p) => ({ ...p, costPerVRI: v }))}
-                        helper="All-in schablon för VRI (vårddygn, läkemedel, lab, IVA, etc.)."
+                        min={30000}
+                        max={200000}
+                        step={5000}
+                        formatValue={(v) => `${(v / 1000).toFixed(0)}k kr`}
+                        helper="Total kostnad per VRI (vårddygn, läkemedel, lab, IVA, etc.)."
                       />
                     )}
                   </TabsContent>
 
-                  <TabsContent value="produkt" className="mt-6 space-y-4">
-                    <Field
-                      id="capex"
-                      label="Inköp + installation (CAPEX, SEK)"
-                      value={state.capex}
+                  <TabsContent value="produkt" className="mt-6 space-y-6">
+                    <SliderField
+                      label="Investering (CAPEX)"
+                      value={parsed.capex}
                       onChange={(v) => setState((p) => ({ ...p, capex: v }))}
-                      helper="Total investering för de handfat du räknar på (inkl. installation)."
+                      min={50000}
+                      max={1000000}
+                      step={10000}
+                      formatValue={(v) => `${(v / 1000).toFixed(0)}k kr`}
+                      helper="Total investering för handfat inkl. installation."
                     />
-                    <Field
-                      id="opex"
-                      label="Service/underhåll per år (OPEX, SEK/år)"
-                      value={state.opexYear}
+                    <SliderField
+                      label="Årlig driftkostnad (OPEX)"
+                      value={parsed.opexYear}
                       onChange={(v) => setState((p) => ({ ...p, opexYear: v }))}
-                      helper="Årlig kostnad: filter, inspektion, spolning, reservdelar, etc."
+                      min={0}
+                      max={100000}
+                      step={5000}
+                      formatValue={(v) => `${(v / 1000).toFixed(0)}k kr/år`}
+                      helper="Filter, inspektion, spolning, reservdelar, etc."
                     />
-                    <Field
-                      id="amort"
-                      label="Avskrivningstid (år)"
-                      value={state.capexAmortYears}
+                    <SliderField
+                      label="Avskrivningstid"
+                      value={parsed.capexAmortYears}
                       onChange={(v) => setState((p) => ({ ...p, capexAmortYears: v }))}
-                      helper="För att räkna årskostnad av CAPEX i ROI-beräkningen."
+                      min={1}
+                      max={15}
+                      step={1}
+                      unit=" år"
+                      helper="Tid för att skriva av investeringen."
                     />
                   </TabsContent>
                 </Tabs>
@@ -657,21 +742,24 @@ export default function HandfatROIKalkylator() {
                     title="Undvikna infektioner per år"
                     value={fmt1(result.avoided)}
                     sub={`effekt: ${fmtPct(parsed.effectPct)}`}
+                    highlight={result.avoided >= 1}
                   />
                   <Metric
                     title="Sparade vårddygn per år"
                     value={fmt1(result.savedBedDays)}
                     sub={`extra dygn/VRI: ${fmt1(parsed.extraDaysPerVRI)}`}
+                    highlight={result.savedBedDays >= 5}
                   />
                   <Metric
                     title="Sparade kronor per år"
                     value={fmtMoneySEK(result.savedSEK)}
                     sub={state.pricingMode === "perVRI" ? `kostnad/VRI: ${fmtMoneySEK(parsed.costPerVRI)}` : `kostnad/vårddygn: ${fmtMoneySEK(parsed.costPerBedDay)}`}
+                    highlight={result.savedSEK > result.annualCost}
                   />
                   <Metric
                     title="Årskostnad (CAPEX/år + OPEX)"
                     value={fmtMoneySEK(result.annualCost)}
-                    sub={`CAPEX/${fmtInt(parsed.capexAmortYears)} år + OPEX/år`}
+                    sub={`avskrivning över ${fmtInt(parsed.capexAmortYears)} år`}
                   />
                 </div>
 
@@ -679,24 +767,22 @@ export default function HandfatROIKalkylator() {
                   <Metric
                     title="Netto per år"
                     value={fmtMoneySEK(result.net)}
-                    sub={result.net >= 0 ? "positivt" : "negativt"}
+                    sub={result.net >= 0 ? "positivt resultat" : "negativt resultat"}
+                    highlight={result.net > 0}
                   />
                   <Metric
                     title="Payback"
                     value={Number.isFinite(result.paybackYears) ? fmt1(result.paybackYears) + " år" : "–"}
-                    sub="(CAPEX / (besparing − OPEX))"
+                    sub="tid till återbetald investering"
+                    highlight={Number.isFinite(result.paybackYears) && result.paybackYears <= 5}
                   />
                 </div>
 
-                <div className="rounded-2xl border p-4 bg-green-50">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium">Sammanfattning</div>
-                      <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                        Med antagandet {fmtPct(parsed.sinkAttributablePct)} handfatskoppling och {fmtPct(parsed.effectPct)} effekt undviks cirka <span className="font-medium">{fmt1(result.avoided)}</span> gramnegativa vårdrelaterade infektioner per år, vilket motsvarar <span className="font-medium">{fmt1(result.savedBedDays)}</span> sparade vårddygn och ungefär <span className="font-medium">{fmtMoneySEK(result.savedSEK)}</span> i årlig besparing.
-                      </p>
-                    </div>
-                  </div>
+                <div className="rounded-2xl border border-green-200 p-5 bg-gradient-to-br from-green-50 to-emerald-50">
+                  <div className="text-sm font-semibold text-green-800 mb-3">Sammanfattning</div>
+                  <p className="text-sm text-green-900/80 leading-relaxed">
+                    Med antagandet <span className="font-semibold text-green-800">{fmtPct(parsed.sinkAttributablePct)}</span> handfatskoppling och <span className="font-semibold text-green-800">{fmtPct(parsed.effectPct)}</span> effekt undviks cirka <span className="font-semibold text-green-800">{fmt1(result.avoided)}</span> gramnegativa vårdrelaterade infektioner per år, vilket motsvarar <span className="font-semibold text-green-800">{fmt1(result.savedBedDays)}</span> sparade vårddygn och ungefär <span className="font-semibold text-green-800">{fmtMoneySEK(result.savedSEK)}</span> i årlig besparing.
+                  </p>
                 </div>
 
                 <div className="text-xs text-muted-foreground leading-relaxed">
